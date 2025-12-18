@@ -1,14 +1,15 @@
+/*-----------------------SAS Proprietary Software 9.4 (TS1M8)------------------------*/
+
 
 /*********************************************/
 /*****RISK FACTORS ASSOCIATED WITH ***********/
 /**TREATMENT RESISTANT POSTPARTUM DEPRESSION**/
 /*********************************************/
 
-/*-----------------------SAS Proprietary Software 9.4 (TS1M8)------------------------*/
+/***************MAIN ANALYSIS*****************/
 
 
 libname data  "W:\C6_Fang\WMH\Projects\Yufeng\RiskFactorTRPND\01_Data";
-
 
 
 /*load dataset*/
