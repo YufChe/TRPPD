@@ -1,0 +1,301 @@
+
+/*********************************************/
+/*****RISK FACTORS ASSOCIATED WITH ***********/
+/**TREATMENT RESISTANT POSTPARTUM DEPRESSION**/
+/*********************************************/
+
+/*-----------------------SAS Proprietary Software 9.4 (TS1M8)------------------------*/
+
+
+libname data  "W:\C6_Fang\WMH\Projects\Yufeng\RiskFactorTRPND\01_Data";
+
+
+
+/*load dataset*/
+data ana; set data.datasetup; run;
+* obs 69630;
+
+*keep first ppd for those women have more than one ppd recoerds;
+proc sort data=ana; by lopnr dt_birth; run;
+proc sort data=ana nodupkey out=ana1 dupout=ex1; by lopnr; run; * 5480 obs were removed;
+
+*exclude probable twins and exclude women had prenatal PND before childbirth;
+data ana2 ex2; set ana1;
+by lopnr;
+day=dif(dt_cnpt);
+if first.lopnr then day=.;
+if 0<=day<=40 then delete; * no obs were removed due to probable twins;
+if dt_fstpnd<entry then output ex2; else output ana2; * 5441 obs were removed;
+drop day;
+run; 
+
+*exclude psychosis,bipolar,dementia diagnosed after childbirth and before ppd diagnosis;
+data ana3 ex3; set ana2;
+if ex_psycho^=. and entry<ex_psycho<dt_pnd then output ex3; else output ana3; * 91 obs were removed, leaving 58618;
+drop ex_psycho;
+run;
+* obs 58618;
+
+
+/*recode covariates*/
+data ana4; set ana3;
+
+age=(dt_birth-dt_mbirth)/365.25;
+if      age<20 then agec=1;
+else if age<25 then agec=2;
+else if age<30 then agec=3;
+else if age<35 then agec=4;
+else if age<40 then agec=5;
+else if age>=40 then agec=6;
+
+if      medu in (5,6,7) then medu=1; 
+else if medu in (3,4)   then medu=2; 
+else if medu in (1,2)   then medu=3; 
+else if medu=.          then medu=99;
+
+if      income_c in (3) then income=1; 
+else if income_c in (2) then income=2;
+else if income_c in (1) then income=3;
+else if income_c in (99) then income=99;
+drop income_c;
+
+byear=year(dt_birth);
+if 2006<=byear<2011 then cal=1;
+else if byear<2016  then cal=2;
+else if byear<=2021 then cal=3;
+drop byear;
+
+if region=. then region=2;
+
+if      bmi0=.    then bmic0=99;
+else if bmi0<18.5 then bmic0=1;
+else if bmi0<25   then bmic0=2;
+else if bmi0<30   then bmic0=3;
+else if bmi0<40   then bmic0=4;
+else if bmi0>=40  then bmic0=5; 
+
+if smoke0 in (0,.) then smoke0=99;
+if smoke1 in (0,.) then smoke1=99;
+if snuff0=. then snuff0=99;
+if snuff1=. then snuff1=99;
+
+if parity>=3 then parity=3;
+
+if singleton=0 then singleton=2;
+
+if      partus=3 then partus=0; *natural vaginal;
+else if partus=1 then partus=3; *C-section delivery;
+else if partus=2 then partus=1; *assist vaginal;
+
+if      bw in (., 0) then bwc=99;
+else if bw<1500      then bwc=1;
+else if bw<2500      then bwc=2;
+else if bw<4000      then bwc=3;
+else if bw>=4000     then bwc=3;
+
+ga=ga/7;
+if      22<=ga<32 then gac=1;
+else if 32<=ga<37 then gac=2;
+else if 37<=ga<42 then gac=3;
+else if 42<=ga<46 then gac=4;
+else if ga=.      then gac=99;
+
+if apg1>=8 and apg5=. then apg5=apg1;
+if      apg5=.  then apgar5=99; 
+else if apg5>=7 then apgar5=0; 
+else if apg5<7  then apgar5=1;
+
+if cci>=2 then cci=2;
+
+if dt_psy=. then psy=0; else psy=1;
+if dt_dep=. then dep=0; else dep=1;
+if dt_anx=. then anx=0; else anx=1;
+if dt_sub=. then sub=0; else sub=1;
+if dt_str=. then str=0; else str=1;
+if dt_psc=. then psc=0; else psc=1;
+if dt_bip=. then bip=0; else bip=1;
+if dt_sle=. then sle=0; else sle=1;
+if dt_per=. then per=0; else per=1;
+if dt_pmd=. then pmd=0; else pmd=1;
+if dt_neu=. then neu=0; else neu=1;
+drop dt_psy--dt_per dt_neu;
+
+if trpnd=.  then trpnd=0;
+run;
+
+data ana5; set ana4; run;
+
+
+/********characteristics of study paticipants************/
+%macro freq(freq);
+ods excel options(sheet_interval='none') file="W:\C6_Fang\WMH\Projects\Yufeng\RiskFactorTRPND\03_Output";
+proc freq data=ana5;
+table (agec medu income civil cal mland region bmic0 smoke1 snuff1 
+       parity singleton partus gac bwc apgar5 stillbirth 
+       ht diabt cci psy psc bip sle per neu dep anx sub str pmd)*trpnd/nopercent norow nocol; 
+run;
+ods excel close;
+%mend;
+%freq(freq);
+
+
+
+
+/*Estimates from Poisson regression model*/
+
+*Modoel 1: crude association;
+%macro model_1(var, ref);
+ods select Estimates;
+proc genmod data=ana5;
+class &var(ref="&ref")/param=ref;
+model trpnd= &var     /dist=poisson;
+estimate "&var.1" &var 1 0 0 0 0;
+estimate "&var.2" &var 0 1 0 0 0;
+estimate "&var.3" &var 0 0 1 0 0;
+estimate "&var.4" &var 0 0 0 1 0;
+estimate "&var.5" &var 0 0 0 0 1;
+ods output Estimates=RR1(keep=Label MeanEstimate MeanLowerCL MeanUpperCL ProbChiSq);
+run;
+data RR2; set RR1(rename=(ProbChiSq=Pvalue1));
+format label $16. Estimate1 $16.;
+Estimate1 = compress(put(MeanEstimate, 8.2))||" ("||compress(put(MeanLowerCL, 8.2))||"-"||compress(put(MeanUpperCL, 8.2))||")";
+keep label estimate1 Pvalue1;
+run;
+data Riskratio1; set Riskratio1 RR2; run;
+%mend;
+
+*Modoel 2: estimates adjusted for age, educational level, calendar year, residential region, 
+           maternal country of birth, parity, and multiple gestation;
+%macro model_2(var, ref);
+ods select Estimates;
+proc genmod data=ana5;
+class &var(ref="&ref") agec cal medu mland region singleton parity/param=ref;
+model trpnd= &var      agec cal medu mland region singleton parity/dist=poisson;
+estimate "&var.1" &var 1 0 0 0 0;
+estimate "&var.2" &var 0 1 0 0 0;
+estimate "&var.3" &var 0 0 1 0 0;
+estimate "&var.4" &var 0 0 0 1 0;
+estimate "&var.5" &var 0 0 0 0 1;
+ods output Estimates=RR1(keep=Label MeanEstimate MeanLowerCL MeanUpperCL ProbChiSq);
+run;
+data RR2; set RR1(rename=(ProbChiSq=Pvalue2));
+format label $16. Estimate2 $16.;
+Estimate2 = compress(put(MeanEstimate, 8.2))||" ("||compress(put(MeanLowerCL, 8.2))||"-"||compress(put(MeanUpperCL, 8.2))||")";
+keep label estimate2 Pvalue2;
+run;
+data Riskratio2; set Riskratio2 RR2; run;
+%mend;
+
+
+%macro analysis(RR);
+data Riskratio1; format label $16. Estimate1 $16.; run;
+%model_1(var=agec,       ref=3);
+%model_1(var=medu,       ref=1);
+%model_1(var=income,     ref=1);
+%model_1(var=civil,      ref=1);
+%model_1(var=cal,        ref=1);
+%model_1(var=mland,      ref=1);
+%model_1(var=region,     ref=1);
+%model_1(var=bmic0,      ref=2);
+%model_1(var=smoke1,     ref=1);
+%model_1(var=snuff1,     ref=1);
+%model_1(var=parity,     ref=1);
+%model_1(var=singleton,  ref=1);
+%model_1(var=partus,     ref=0);
+%model_1(var=gac,        ref=3);
+%model_1(var=bwc,        ref=3);
+%model_1(var=apgar5,     ref=0);
+%model_1(var=stillbirth, ref=0);
+%model_1(var=ht,         ref=0);
+%model_1(var=diabt,      ref=0);
+%model_1(var=cci,        ref=0);
+%model_1(var=psy,        ref=0);
+%model_1(var=psc,        ref=0);
+%model_1(var=bip,        ref=0);
+%model_1(var=sle,        ref=0);
+%model_1(var=per,        ref=0);
+%model_1(var=neu,        ref=0);
+%model_1(var=dep,        ref=0);
+%model_1(var=anx,        ref=0);
+%model_1(var=sub,        ref=0);
+%model_1(var=str,        ref=0);
+%model_1(var=pmd,        ref=0);
+
+
+data Riskratio2; format label $16. Estimate2 $16.; run;
+%model_2(var=agec,       ref=3);
+%model_2(var=medu,       ref=1);
+%model_2(var=income,     ref=1);
+%model_2(var=civil,      ref=1);
+%model_2(var=cal,        ref=1);
+%model_2(var=mland,      ref=1);
+%model_2(var=region,     ref=1);
+%model_2(var=bmic0,      ref=2);
+%model_2(var=smoke1,     ref=1);
+%model_2(var=snuff1,     ref=1);
+%model_2(var=parity,     ref=1);
+%model_2(var=singleton,  ref=1);
+%model_2(var=partus,     ref=0);
+%model_2(var=gac,        ref=3);
+%model_2(var=bwc,        ref=3);
+%model_2(var=apgar5,     ref=0);
+%model_2(var=stillbirth, ref=0);
+%model_2(var=ht,         ref=0);
+%model_2(var=diabt,      ref=0);
+%model_2(var=cci,        ref=0);
+%model_2(var=psy,        ref=0);
+%model_2(var=psc,        ref=0);
+%model_2(var=bip,        ref=0);
+%model_2(var=sle,        ref=0);
+%model_2(var=per,        ref=0);
+%model_2(var=neu,        ref=0);
+%model_2(var=dep,        ref=0);
+%model_2(var=anx,        ref=0);
+%model_2(var=sub,        ref=0);
+%model_2(var=str,        ref=0);
+%model_2(var=pmd,        ref=0);
+
+
+
+* produce adjusted p vaules: adjuste for multiplr testing ;
+data riskratios; merge riskratio1 riskratio2; if Pvalue1>.; run;
+proc multtest inpvalues(Pvalue1)=riskratios holm hoc fdr;
+ods output pValues=p1(keep=test FalseDiscoveryRate rename=(FalseDiscoveryRate=fdr_p1));
+run;
+proc multtest inpvalues(Pvalue2)=riskratios holm hoc fdr;
+ods output pValues=p2(keep=test FalseDiscoveryRate rename=(FalseDiscoveryRate=fdr_p2));
+run;
+data p1; set p1(rename=(fdr_p1=x)); 
+length fdr_p1 $6;
+y=round(x, 0.001); 
+fdr_p1=put(y, 6.3); 
+if fdr_p1=" 0.000" then fdr_p1="<0.001";
+drop x y; 
+run;
+data p2; set p2(rename=(fdr_p2=x)); 
+length fdr_p2 $6;
+y=round(x, 0.001); 
+fdr_p2=put(y, 6.3); 
+if fdr_p2=" 0.000" then fdr_p2="<0.001";
+drop x y; 
+run;
+
+data riskratios; set riskratios; Test=_n_; run;
+data riskratios1; merge riskratios p1 p2; by test; run;
+data riskratios2;
+retain label estimate1 fdr_p1 estimate2 fdr_p2;
+set riskratios1(keep=label estimate1 fdr_p1 estimate2 fdr_p2);
+run;
+
+proc export data=riskratios2 
+outfile = "W:\C6_Fang\WMH\Projects\Yufeng\RiskFactorTRPND\03_Output"
+dbms=xlsx
+replace; 
+run;
+%mend;
+
+%analysis(RR);
+
+
+
+/*******************************************End line*****************************************/
